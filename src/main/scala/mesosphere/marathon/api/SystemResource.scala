@@ -3,21 +3,22 @@ package api
 
 import javax.servlet.http.HttpServletRequest
 import javax.ws.rs._
-import javax.ws.rs.core.{ Context, MediaType, Request, Response, Variant }
+import javax.ws.rs.core.{Context, MediaType, Request, Response, Variant}
 
 import akka.actor.ActorSystem
-import ch.qos.logback.classic.{ Level, Logger, LoggerContext }
+import ch.qos.logback.classic.{Level, Logger, LoggerContext}
 import com.google.inject.Inject
-import com.typesafe.config.{ Config, ConfigRenderOptions }
+import com.typesafe.config.{Config, ConfigRenderOptions}
 import com.typesafe.scalalogging.StrictLogging
 import com.wix.accord.Validator
 import mesosphere.marathon.metrics.Metrics
 import mesosphere.marathon.plugin.auth.AuthorizedResource.SystemConfig
-import mesosphere.marathon.plugin.auth.{ Authenticator, Authorizer, UpdateResource, ViewResource }
-import mesosphere.marathon.raml.{ LoggerChange, Raml }
+import mesosphere.marathon.plugin.auth.{Authenticator, Authorizer, UpdateResource, ViewResource}
+import mesosphere.marathon.raml.{LoggerChange, Raml}
 import mesosphere.marathon.raml.MetricsConversion._
 import org.slf4j.LoggerFactory
 import play.api.libs.json.Json
+import scala.concurrent.ExecutionContext
 import stream.Implicits._
 import com.wix.accord.dsl._
 
@@ -31,9 +32,19 @@ import scala.concurrent.duration._
 class SystemResource @Inject() (val config: MarathonConf, cfg: Config)(implicit
     val authenticator: Authenticator,
     val authorizer: Authorizer,
-    actorSystem: ActorSystem) extends RestResource with AuthResource with StrictLogging {
+    actorSystem: ActorSystem,
+    val executionContext: ExecutionContext) extends RestResource with AuthResource with StrictLogging {
 
   private[this] val TEXT_WILDCARD_TYPE = MediaType.valueOf("text/*")
+
+  /**
+    * If the user requests '/', redirect them to the UI
+    */
+  @GET
+  @Path("")
+  def redirectUI(): Response = {
+    Response.status(302).header("Location", "/ui/").build
+  }
 
   /**
     * ping sends a pong to a client.
@@ -77,7 +88,7 @@ class SystemResource @Inject() (val config: MarathonConf, cfg: Config)(implicit
   @GET
   @Path("metrics")
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  @Produces(Array(MarathonMediaType.PREFERRED_APPLICATION_JSON))
+  @Produces(Array(MediaType.APPLICATION_JSON))
   def metrics(@Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
     withAuthorization(ViewResource, SystemConfig){
       ok(jsonString(Raml.toRaml(Metrics.snapshot())))
@@ -87,7 +98,7 @@ class SystemResource @Inject() (val config: MarathonConf, cfg: Config)(implicit
   @GET
   @Path("config")
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  @Produces(Array(MarathonMediaType.PREFERRED_APPLICATION_JSON))
+  @Produces(Array(MediaType.APPLICATION_JSON))
   def config(@Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
     withAuthorization(ViewResource, SystemConfig) {
       ok(cfg.root().render(ConfigRenderOptions.defaults().setJson(true)))
@@ -97,7 +108,7 @@ class SystemResource @Inject() (val config: MarathonConf, cfg: Config)(implicit
   @GET
   @Path("logging")
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  @Produces(Array(MarathonMediaType.PREFERRED_APPLICATION_JSON))
+  @Produces(Array(MediaType.APPLICATION_JSON))
   def showLoggers(@Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
     withAuthorization(ViewResource, SystemConfig) {
       LoggerFactory.getILoggerFactory match {
@@ -112,7 +123,7 @@ class SystemResource @Inject() (val config: MarathonConf, cfg: Config)(implicit
   @POST
   @Path("logging")
   @Consumes(Array(MediaType.APPLICATION_JSON))
-  @Produces(Array(MarathonMediaType.PREFERRED_APPLICATION_JSON))
+  @Produces(Array(MediaType.APPLICATION_JSON))
   def changeLogger(body: Array[Byte], @Context req: HttpServletRequest): Response = authenticated(req) { implicit identity =>
     withAuthorization(UpdateResource, SystemConfig) {
       withValid(Json.parse(body).as[LoggerChange]) { change =>
@@ -128,7 +139,6 @@ class SystemResource @Inject() (val config: MarathonConf, cfg: Config)(implicit
             logger.setLevel(level)
 
             // if a duration is given, we schedule a timer to reset to the current level
-            import scala.concurrent.ExecutionContext.Implicits.global
             change.durationSeconds.foreach(duration => actorSystem.scheduler.scheduleOnce(duration.seconds, new Runnable {
               override def run(): Unit = {
                 logger.info(s"Duration expired. Reset Logger ${logger.getName} back to $currentEffectiveLevel")

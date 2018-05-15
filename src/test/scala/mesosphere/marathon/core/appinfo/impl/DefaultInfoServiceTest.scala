@@ -4,7 +4,7 @@ package core.appinfo.impl
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import mesosphere.UnitTest
-import mesosphere.marathon.core.appinfo.{ AppInfo, GroupInfo, _ }
+import mesosphere.marathon.core.appinfo.{AppInfo, GroupInfo, _}
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.state._
 import mesosphere.marathon.test.GroupCreation

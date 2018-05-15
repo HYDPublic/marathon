@@ -5,16 +5,16 @@ import javax.inject.Inject
 
 import akka.Done
 import com.typesafe.scalalogging.StrictLogging
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext
 import mesosphere.marathon.core.deployment.DeploymentPlan
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.core.instance.Instance
-import mesosphere.marathon.core.task.termination.{ KillReason, KillService }
+import mesosphere.marathon.core.task.termination.{KillReason, KillService}
 import mesosphere.marathon.core.task.tracker.InstanceTracker
-import mesosphere.marathon.plugin.auth.{ Authenticator, Authorizer, Identity, UpdateRunSpec }
+import mesosphere.marathon.plugin.auth.{Authenticator, Authorizer, Identity, UpdateRunSpec}
 import mesosphere.marathon.state._
 
-import scala.async.Async.{ async, await }
+import scala.async.Async.{async, await}
 import scala.concurrent.Future
 import scala.util.control.NonFatal
 
@@ -25,7 +25,7 @@ class TaskKiller @Inject() (
     val config: MarathonConf,
     val authenticator: Authenticator,
     val authorizer: Authorizer,
-    killService: KillService) extends AuthResource with StrictLogging {
+    killService: KillService)(implicit val executionContext: ExecutionContext) extends AuthResource with StrictLogging {
 
   @SuppressWarnings(Array("all")) // async/await
   def kill(

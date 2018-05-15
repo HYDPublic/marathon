@@ -3,11 +3,11 @@ package api
 
 import mesosphere.marathon.core.group.GroupManager
 import mesosphere.marathon.plugin.auth._
-import mesosphere.marathon.raml.{ GroupConversion, Raml }
+import mesosphere.marathon.raml.{GroupConversion, Raml}
 import mesosphere.marathon.state._
 
 import scala.async.Async._
-import scala.concurrent.{ ExecutionContext, Future }
+import scala.concurrent.{ExecutionContext, Future}
 
 class GroupApiService(groupManager: GroupManager)(implicit authorizer: Authorizer, executionContext: ExecutionContext) {
 
@@ -62,7 +62,7 @@ class GroupApiService(groupManager: GroupManager)(implicit authorizer: Authorize
 
   private def checkAuthorizationOrThrow[Resource](action: AuthorizedAction[Resource], resource: Resource)(implicit identity: Identity, authorizer: Authorizer): Boolean = {
     if (!authorizer.isAuthorized(identity, action, resource))
-      throw AccessDeniedException()
+      throw RejectionException(Rejection.AccessDeniedRejection(authorizer, identity))
     else
       true
   }

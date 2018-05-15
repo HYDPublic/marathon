@@ -11,16 +11,16 @@ import mesosphere.marathon.core.storage.backup.PersistentStoreBackup
 import mesosphere.marathon.core.storage.store.PersistenceStore
 import mesosphere.marathon.core.storage.store.impl.memory.InMemoryPersistenceStore
 import mesosphere.marathon.state.RootGroup
-import mesosphere.marathon.storage.{ InMem, StorageConfig }
+import mesosphere.marathon.storage.{InMem, StorageConfig}
 import mesosphere.marathon.storage.migration.StorageVersions._
 import mesosphere.marathon.storage.repository._
-import mesosphere.marathon.test.{ Mockito, SettableClock, SimulatedScheduler }
+import mesosphere.marathon.test.{Mockito, SettableClock, SimulatedScheduler}
 import org.scalatest.GivenWhenThen
 import Migration.MigrationAction
 import akka.stream.Materializer
 import org.scalatest.concurrent.Eventually
 
-import scala.concurrent.{ ExecutionContext, Future, Promise }
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
 class MigrationTest extends AkkaUnitTest with Mockito with GivenWhenThen with Eventually {
 
@@ -41,7 +41,7 @@ class MigrationTest extends AkkaUnitTest with Mockito with GivenWhenThen with Ev
     private val configurationRepository: RuntimeConfigurationRepository = mock[RuntimeConfigurationRepository]
     private val backup: PersistentStoreBackup = mock[PersistentStoreBackup]
     private val serviceDefinitionRepository: ServiceDefinitionRepository = mock[ServiceDefinitionRepository]
-    private val config: StorageConfig = InMem(1, Set.empty, None, None)
+    private val config: StorageConfig = InMem(1, 32, Set.empty, None, None)
 
     // assume no runtime config is stored in repository
     configurationRepository.get() returns Future.successful(None)

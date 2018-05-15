@@ -5,16 +5,15 @@ import java.time.Clock
 
 import akka.Done
 import akka.actor._
-import akka.stream.{ ActorMaterializer, ActorMaterializerSettings, Materializer }
-import akka.stream.scaladsl.{ Sink, Source }
+import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Materializer}
+import akka.stream.scaladsl.{Sink, Source}
 import com.typesafe.scalalogging.StrictLogging
 import mesosphere.marathon.core.condition.Condition
 import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.task.Task
-import mesosphere.marathon.core.task.termination.{ KillReason, KillService }
+import mesosphere.marathon.core.task.termination.{KillReason, KillService}
 import mesosphere.marathon.core.task.tracker.InstanceTracker
 import mesosphere.marathon.state.Timestamp
-import org.slf4j.LoggerFactory
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -106,9 +105,8 @@ private[jobs] object OverdueTasksActor {
   private[jobs] case class Check(maybeAck: Option[ActorRef])
 }
 
-private class OverdueTasksActor(support: OverdueTasksActor.Support) extends Actor {
+private class OverdueTasksActor(support: OverdueTasksActor.Support) extends Actor with StrictLogging {
   var checkTicker: Cancellable = _
-  private[this] val log = LoggerFactory.getLogger(getClass)
 
   implicit val materializer = ActorMaterializer(ActorMaterializerSettings(context.system))
 
@@ -135,7 +133,7 @@ private class OverdueTasksActor(support: OverdueTasksActor.Support) extends Acto
 
         case None =>
           import context.dispatcher
-          resultFuture.failed.foreach { case NonFatal(e) => log.warn("error while checking for overdue tasks", e) }
+          resultFuture.failed.foreach { case NonFatal(e) => logger.warn("error while checking for overdue tasks", e) }
       }
   }
 }

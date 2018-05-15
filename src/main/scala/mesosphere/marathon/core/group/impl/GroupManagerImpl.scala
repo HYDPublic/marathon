@@ -3,29 +3,31 @@ package core.group.impl
 
 import java.time.OffsetDateTime
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.inject.Provider
 
+import javax.inject.Provider
 import akka.event.EventStream
 import akka.stream.scaladsl.Source
-import akka.{ Done, NotUsed }
+import akka.{Done, NotUsed}
 import com.typesafe.scalalogging.StrictLogging
 import kamon.Kamon
+import mesosphere.marathon.api.{Rejection, RejectionException}
 import mesosphere.marathon.api.v2.Validation
 import mesosphere.marathon.core.deployment.DeploymentPlan
-import mesosphere.marathon.core.event.{ GroupChangeFailed, GroupChangeSuccess }
-import mesosphere.marathon.core.group.{ GroupManager, GroupManagerConfig }
+import mesosphere.marathon.core.event.{GroupChangeFailed, GroupChangeSuccess}
+import mesosphere.marathon.core.group.{GroupManager, GroupManagerConfig}
 import mesosphere.marathon.core.instance.Instance
 import mesosphere.marathon.core.pod.PodDefinition
+import mesosphere.marathon.metrics.{Metrics, ServiceMetric}
 import mesosphere.marathon.state._
 import mesosphere.marathon.storage.repository.GroupRepository
 import mesosphere.marathon.upgrade.GroupVersioningUtil
-import mesosphere.marathon.util.{ LockedVar, WorkQueue }
+import mesosphere.marathon.util.{LockedVar, WorkQueue}
 
 import scala.async.Async._
 import scala.collection.immutable.Seq
-import scala.concurrent.{ Await, ExecutionContext, Future }
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.control.NonFatal
-import scala.util.{ Failure, Success }
+import scala.util.{Failure, Success}
 
 class GroupManagerImpl(
     val config: GroupManagerConfig,
@@ -40,12 +42,16 @@ class GroupManagerImpl(
   private[this] val serializeUpdates: WorkQueue = WorkQueue(
     "GroupManager",
     maxConcurrent = 1, maxQueueLength = config.internalMaxQueuedRootGroupUpdates())
+
   /**
     * Lock around the root to guarantee read-after-write consistency,
     * Even though updates go through the workqueue, we want to make sure multiple readers always read
     * the latest version of the root. This could be solved by a @volatile too, but this is more explicit.
     */
   private[this] val root = LockedVar(initialRoot)
+
+  private[this] val dismissedDeploymentsMetric = Metrics.counter(ServiceMetric, getClass, "dismissedDeployments")
+  private[this] val groupUpdateSizeMetric = Metrics.minMaxCounter(ServiceMetric, getClass, "queueSize")
 
   private val ConcurrentCallLimit = 8
 
@@ -110,12 +116,16 @@ class GroupManagerImpl(
     change: (RootGroup) => Future[Either[T, RootGroup]],
     version: Timestamp, force: Boolean, toKill: Map[PathId, Seq[Instance]]): Future[Either[T, DeploymentPlan]] = try {
 
+    groupUpdateSizeMetric.increment()
+
     // All updates to the root go through the work queue.
     val maybeDeploymentPlan: Future[Either[T, DeploymentPlan]] = serializeUpdates {
       logger.info(s"Upgrade root group version:$version with force:$force")
 
       val from = rootGroup()
       async {
+        await(checkMaxRunningDeployments())
+
         val changedGroup = await(change(from))
         changedGroup match {
           case Left(left) =>
@@ -142,15 +152,17 @@ class GroupManagerImpl(
       }
     }
 
+    maybeDeploymentPlan.onComplete(_ => groupUpdateSizeMetric.decrement())
+
     maybeDeploymentPlan.onComplete {
       case Success(Right(plan)) =>
         logger.info(s"Deployment ${plan.id}:${plan.version} for ${plan.targetIdsString} acknowledged. Waiting to get processed")
         eventStream.publish(GroupChangeSuccess(id, version.toString))
       case Success(Left(_)) =>
         ()
-      case Failure(ex: AccessDeniedException) =>
+      case Failure(RejectionException(_: Rejection.AccessDeniedRejection)) =>
         // If the request was not authorized, we should not publish an event
-        logger.warn(s"Deployment failed for change: $version", ex)
+        logger.warn(s"Deployment failed for change: $version; Access denied.")
       case Failure(NonFatal(ex)) =>
         logger.warn(s"Deployment failed for change: $version", ex)
         eventStream.publish(GroupChangeFailed(id, version.toString, ex.getMessage))
@@ -158,6 +170,17 @@ class GroupManagerImpl(
     maybeDeploymentPlan
   } catch {
     case NonFatal(ex) => Future.failed(ex)
+  }
+
+  @SuppressWarnings(Array("all")) // async/await
+  def checkMaxRunningDeployments(): Future[Done] = async {
+    val max = config.maxRunningDeployments()
+    val num = await(deploymentService.get().listRunningDeployments()).size
+    if (num >= max) {
+      dismissedDeploymentsMetric.increment()
+      throw new TooManyRunningDeploymentsException(max)
+    }
+    Done
   }
 
   @SuppressWarnings(Array("all")) // async/await
